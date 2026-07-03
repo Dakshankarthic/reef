@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0e1a">
+<title>Ventilation & Power Monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌀</text></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#0a0e1a;--card:#131a2e;--border:#1e2a45;
+    --text:#e0e6f0;--dim:#7a8bb5;--accent:#3b82f6;
+    --green:#22c55e;--red:#ef4444;--orange:#f59e0b;--cyan:#06b6d4;
+  }
+  body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:12px;-webkit-tap-highlight-color:transparent}
+  .header{text-align:center;margin-bottom:16px}
+  .header h1{font-size:clamp(1.2rem,4vw,1.8rem);font-weight:700;background:linear-gradient(135deg,var(--accent),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .header p{color:var(--dim);margin-top:4px;font-size:0.8rem}
+  .connect-bar{display:flex;gap:8px;align-items:center;justify-content:center;margin-bottom:16px;flex-wrap:wrap}
+  .connect-bar input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:10px;font-size:1rem;flex:1;min-width:200px;max-width:360px}
+  .connect-bar button{background:var(--accent);color:#fff;border:none;padding:10px 20px;border-radius:10px;cursor:pointer;font-weight:600;font-size:1rem;min-height:44px}
+  .status-badge{padding:6px 14px;border-radius:20px;font-size:0.8rem;font-weight:600;white-space:nowrap}
+  .status-badge.online{background:rgba(34,197,94,0.15);color:var(--green)}
+  .status-badge.offline{background:rgba(239,68,68,0.15);color:var(--red)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;max-width:1200px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;transition:0.3s}
+  .card:hover{border-color:var(--accent);box-shadow:0 0 20px rgba(59,130,246,0.08)}
+  .card h2{font-size:0.95rem;font-weight:600;color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .data-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)}
+  .data-row:last-child{border-bottom:none}
+  .data-row .label{color:var(--dim);font-size:0.82rem}
+  .data-row .value{font-weight:600;font-size:0.9rem;font-variant-numeric:tabular-nums;text-align:right}
+  .val-green{color:var(--green)}.val-red{color:var(--red)}
+  .val-orange{color:var(--orange)}.val-cyan{color:var(--cyan)}
+  /* Tabs for controls */
+  .tabs{max-width:1200px;margin:20px auto 0}
+  .tab-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+  .tab-bar button{background:var(--card);border:1px solid var(--border);color:var(--dim);padding:10px 18px;border-radius:10px 10px 0 0;cursor:pointer;font-size:0.85rem;font-weight:500;white-space:nowrap;min-height:44px;flex-shrink:0}
+  .tab-bar button.active{background:var(--card);color:var(--accent);border-bottom-color:var(--card)}
+  .tab-content{background:var(--card);border:1px solid var(--border);border-radius:0 14px 14px 14px;padding:16px}
+  .tab-panel{display:none}.tab-panel.active{display:block}
+  .ctrl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+  .ctrl-item{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px}
+  .ctrl-item label{display:block;color:var(--dim);font-size:0.8rem;margin-bottom:6px}
+  .ctrl-item input,.ctrl-item select{width:100%;background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:8px;font-size:1rem;min-height:44px}
+  .ctrl-item button{margin-top:8px;background:var(--accent);color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:0.9rem;min-height:44px;width:100%}
+  .pair{display:flex;gap:8px}
+  .pair input{width:50%}
+  .btn-fan{display:flex;gap:8px;margin-top:8px}
+  .btn-fan button{flex:1;padding:12px;border:none;border-radius:10px;cursor:pointer;font-weight:700;font-size:0.95rem;min-height:50px;transition:0.2s}
+  .btn-fan button.active-mode{box-shadow:0 0 12px rgba(59,130,246,0.5);transform:scale(1.03)}
+  .ack-btn{display:block;width:90%;max-width:500px;margin:0 auto;background:var(--orange)!important;color:#000;font-weight:700;font-size:1.1rem;padding:16px!important;border-radius:12px!important;border:none;cursor:pointer;animation:pulse 1.5s infinite;min-height:56px}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+  .last-update{text-align:center;color:var(--dim);font-size:0.75rem;margin-top:16px;padding-bottom:20px}
+  /* Phone screens */
+  @media(max-width:480px){
+    body{padding:8px}
+    .grid{grid-template-columns:1fr;gap:10px}
+    .card{padding:14px}
+    .ctrl-grid{grid-template-columns:1fr}
+    .header h1{font-size:1.2rem}
+    .connect-bar input{min-width:150px;max-width:none;flex:1}
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🌀 Ventilation & Power Monitor</h1>
+  <p>Live Dashboard — Works from any device, anywhere</p>
+</div>
+<div class="connect-bar">
+  <input type="text" id="deviceId" placeholder="MQTT Device ID (e.g. reef_a1b2c3d4)">
+  <button onclick="connectMQTT()">Connect</button>
+  <span id="mqttStatus" class="status-badge offline">Offline</span>
+</div>
+<div id="alertBar" style="display:none;margin-bottom:16px">
+  <button class="ack-btn" onclick="sendCmd({cmd:'ack_alarm'})">⚠️ POWER OUTAGE — Tap to Acknowledge</button>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>🌡️ Outdoor Sensor</h2>
+    <div class="data-row"><span class="label">Temperature</span><span class="value val-cyan" id="outT">—</span></div>
+    <div class="data-row"><span class="label">Humidity</span><span class="value val-cyan" id="outH">—</span></div>
+    <div class="data-row"><span class="label">Temp Range</span><span class="value" id="outTR">—</span></div>
+    <div class="data-row"><span class="label">Hum Range</span><span class="value" id="outHR">—</span></div>
+  </div>
+  <div class="card">
+    <h2>🏠 Indoor Sensor 1</h2>
+    <div class="data-row"><span class="label">Temperature</span><span class="value val-cyan" id="in1T">—</span></div>
+    <div class="data-row"><span class="label">Humidity</span><span class="value val-cyan" id="in1H">—</span></div>
+    <div class="data-row"><span class="label">Temp Range</span><span class="value" id="in1TR">—</span></div>
+    <div class="data-row"><span class="label">Hum Range</span><span class="value" id="in1HR">—</span></div>
+  </div>
+  <div class="card">
+    <h2>🏠 Indoor Sensor 2</h2>
+    <div class="data-row"><span class="label">Temperature</span><span class="value val-cyan" id="in2T">—</span></div>
+    <div class="data-row"><span class="label">Humidity</span><span class="value val-cyan" id="in2H">—</span></div>
+    <div class="data-row"><span class="label">Temp Range</span><span class="value" id="in2TR">—</span></div>
+    <div class="data-row"><span class="label">Hum Range</span><span class="value" id="in2HR">—</span></div>
+  </div>
+  <div class="card">
+    <h2>⛅ Weather</h2>
+    <div class="data-row"><span class="label">Temperature</span><span class="value val-cyan" id="wT">—</span></div>
+    <div class="data-row"><span class="label">Humidity</span><span class="value val-cyan" id="wH">—</span></div>
+    <div class="data-row"><span class="label">Condition</span><span class="value" id="wD">—</span></div>
+    <div class="data-row"><span class="label">Weather Gate</span><span class="value" id="wG">—</span></div>
+  </div>
+  <div class="card">
+    <h2>⚡ Power & Voltage</h2>
+    <div class="data-row"><span class="label">Status</span><span class="value" id="pwr">—</span></div>
+    <div class="data-row"><span class="label">L1</span><span class="value val-orange" id="v1">—</span></div>
+    <div class="data-row"><span class="label">L2</span><span class="value val-orange" id="v2">—</span></div>
+    <div class="data-row"><span class="label">L3</span><span class="value val-orange" id="v3">—</span></div>
+  </div>
+  <div class="card">
+    <h2>🌀 Fan & System</h2>
+    <div class="data-row"><span class="label">Fan Mode</span><span class="value" id="fanMode">—</span></div>
+    <div class="data-row"><span class="label">Fan Active</span><span class="value" id="fanOn">—</span></div>
+    <div class="data-row"><span class="label">ON Delay</span><span class="value" id="fanDly">—</span></div>
+    <div class="data-row"><span class="label">Modem</span><span class="value" id="modem">—</span></div>
+  </div>
+</div>
+
+<!-- Tabbed Controls -->
+<div class="tabs">
+  <div class="tab-bar">
+    <button class="active" onclick="showTab('tabFan')">🌀 Fan</button>
+    <button onclick="showTab('tabOut')">🌡️ Outdoor</button>
+    <button onclick="showTab('tabIn1')">🏠 Indoor 1</button>
+    <button onclick="showTab('tabIn2')">🏠 Indoor 2</button>
+    <button onclick="showTab('tabPhone')">📱 Phones</button>
+  </div>
+  <div class="tab-content">
+    <!-- Fan Tab -->
+    <div id="tabFan" class="tab-panel active">
+      <div class="ctrl-grid">
+        <div class="ctrl-item">
+          <label>Fan Mode</label>
+          <div class="btn-fan">
+            <button id="btnAuto" onclick="sendCmd({cmd:'fan_mode',val:'AUTO'})" style="background:var(--accent);color:#fff">AUTO</button>
+            <button id="btnOn" onclick="sendCmd({cmd:'fan_mode',val:'ON'})" style="background:var(--green);color:#000">ON</button>
+            <button id="btnOff" onclick="sendCmd({cmd:'fan_mode',val:'OFF'})" style="background:var(--red);color:#fff">OFF</button>
+          </div>
+        </div>
+        <div class="ctrl-item">
+          <label>Fan ON Delay (seconds)</label>
+          <input type="number" id="inFD" min="0" max="60" value="5">
+          <button onclick="setVal('fd','inFD')">Set Delay</button>
+        </div>
+        <div class="ctrl-item">
+          <label>Weather Gate (condition code ≥ is good)</label>
+          <input type="number" id="inWG" min="0" max="900" value="800">
+          <button onclick="setVal('wg','inWG',true)">Set Gate</button>
+        </div>
+      </div>
+    </div>
+    <!-- Outdoor Tab -->
+    <div id="tabOut" class="tab-panel">
+      <div class="ctrl-grid">
+        <div class="ctrl-item">
+          <label>Outdoor Temperature Range (°C)</label>
+          <div class="pair"><input type="number" id="oTn" placeholder="Min"><input type="number" id="oTx" placeholder="Max"></div>
+          <button onclick="setPair('oTn','oTx')">Set Temp Range</button>
+        </div>
+        <div class="ctrl-item">
+          <label>Outdoor Humidity Range (%)</label>
+          <div class="pair"><input type="number" id="oHn" placeholder="Min"><input type="number" id="oHx" placeholder="Max"></div>
+          <button onclick="setPair('oHn','oHx')">Set Hum Range</button>
+        </div>
+      </div>
+    </div>
+    <!-- Indoor 1 Tab -->
+    <div id="tabIn1" class="tab-panel">
+      <div class="ctrl-grid">
+        <div class="ctrl-item">
+          <label>Indoor 1 Temperature Range (°C)</label>
+          <div class="pair"><input type="number" id="i1Tn" placeholder="Min"><input type="number" id="i1Tx" placeholder="Max"></div>
+          <button onclick="setPair('i1Tn','i1Tx')">Set Temp Range</button>
+        </div>
+        <div class="ctrl-item">
+          <label>Indoor 1 Humidity Range (%)</label>
+          <div class="pair"><input type="number" id="i1Hn" placeholder="Min"><input type="number" id="i1Hx" placeholder="Max"></div>
+          <button onclick="setPair('i1Hn','i1Hx')">Set Hum Range</button>
+        </div>
+      </div>
+    </div>
+    <!-- Indoor 2 Tab -->
+    <div id="tabIn2" class="tab-panel">
+      <div class="ctrl-grid">
+        <div class="ctrl-item">
+          <label>Indoor 2 Temperature Range (°C)</label>
+          <div class="pair"><input type="number" id="i2Tn" placeholder="Min"><input type="number" id="i2Tx" placeholder="Max"></div>
+          <button onclick="setPair('i2Tn','i2Tx')">Set Temp Range</button>
+        </div>
+        <div class="ctrl-item">
+          <label>Indoor 2 Humidity Range (%)</label>
+          <div class="pair"><input type="number" id="i2Hn" placeholder="Min"><input type="number" id="i2Hx" placeholder="Max"></div>
+          <button onclick="setPair('i2Hn','i2Hx')">Set Hum Range</button>
+        </div>
+      </div>
+    </div>
+    <!-- Phones Tab -->
+    <div id="tabPhone" class="tab-panel">
+      <div class="ctrl-grid">
+        <div class="ctrl-item">
+          <label>📱 Phone #1 (primary)</label>
+          <input type="tel" id="inPh1" placeholder="+491234567890">
+          <button onclick="sendCmd({cmd:'set_phone',idx:0,val:document.getElementById('inPh1').value})">Save Phone 1</button>
+        </div>
+        <div class="ctrl-item">
+          <label>📱 Phone #2</label>
+          <input type="tel" id="inPh2" placeholder="+491234567890">
+          <button onclick="sendCmd({cmd:'set_phone',idx:1,val:document.getElementById('inPh2').value})">Save Phone 2</button>
+        </div>
+        <div class="ctrl-item">
+          <label>📱 Phone #3</label>
+          <input type="tel" id="inPh3" placeholder="+491234567890">
+          <button onclick="sendCmd({cmd:'set_phone',idx:2,val:document.getElementById('inPh3').value})">Save Phone 3</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="last-update">Last update: <span id="lastUp">Never</span></div>
+
+<script>
+let client=null, cmdTopic='';
+
+function connectMQTT(){
+  const devId=document.getElementById('deviceId').value.trim();
+  if(!devId){alert('Enter device MQTT ID (shown on ESP32 serial at boot)');return}
+  // Save to localStorage for convenience
+  localStorage.setItem('reef_mqtt_id', devId);
+  const dataTopic='reef/'+devId+'/data';
+  cmdTopic='reef/'+devId+'/cmd';
+  const cid='web_'+Math.random().toString(36).substr(2,8);
+  if(client&&client.isConnected()) client.disconnect();
+  client=new Paho.Client('broker.hivemq.com',8884,'/mqtt',cid);
+  client.onMessageArrived=onMessage;
+  client.onConnectionLost=()=>{
+    document.getElementById('mqttStatus').className='status-badge offline';
+    document.getElementById('mqttStatus').textContent='Offline';
+    // Auto-reconnect after 5s
+    setTimeout(()=>{if(!client.isConnected())connectMQTT()},5000);
+  };
+  document.getElementById('mqttStatus').textContent='Connecting...';
+  client.connect({
+    onSuccess:()=>{
+      document.getElementById('mqttStatus').className='status-badge online';
+      document.getElementById('mqttStatus').textContent='Live';
+      client.subscribe(dataTopic);
+    },
+    onFailure:(e)=>{
+      document.getElementById('mqttStatus').className='status-badge offline';
+      document.getElementById('mqttStatus').textContent='Failed';
+      setTimeout(connectMQTT,5000);
+    },
+    useSSL:true, timeout:10
+  });
+}
+
+function onMessage(msg){
+  try{
+    const d=JSON.parse(msg.payloadString);
+    setText('outT',fmt(d.outdoor?.t)+'°C'); setText('outH',fmt(d.outdoor?.h)+'%');
+    setText('in1T',fmt(d.indoor1?.t)+'°C'); setText('in1H',fmt(d.indoor1?.h)+'%');
+    setText('in2T',fmt(d.indoor2?.t)+'°C'); setText('in2H',fmt(d.indoor2?.h)+'%');
+    setText('wT',fmt(d.weather?.t)+'°C'); setText('wH',fmt(d.weather?.h)+'%');
+    setText('wD',d.weather?.desc||'—');
+    setText('wG','Code ≥'+( d.weatherGate||800)+' (now: '+(d.weather?.code||'?')+')');
+    setText('v1',fmt(d.voltage?.l1)+'V'); setText('v2',fmt(d.voltage?.l2)+'V'); setText('v3',fmt(d.voltage?.l3)+'V');
+    // Power
+    const pe=document.getElementById('pwr');
+    if(d.power?.on){pe.textContent='✅ OK';pe.className='value val-green'}
+    else{pe.textContent='🔴 OUTAGE';pe.className='value val-red'}
+    document.getElementById('alertBar').style.display=(d.power?.outage&&!d.power?.on)?'block':'none';
+    // Fan
+    setText('fanMode',d.fan?.mode||'—');
+    const fe=document.getElementById('fanOn');
+    if(d.fan?.on){fe.textContent='✅ Running';fe.className='value val-green'}
+    else if(d.fan?.waiting){fe.textContent='⏳ Delay...';fe.className='value val-orange'}
+    else{fe.textContent='⏹ Off';fe.className='value val-red'}
+    setText('fanDly',(d.fanDelay||5)+'s');
+    setText('modem',d.modem?'✅ Ready':'❌ Offline');
+    document.getElementById('modem').className='value '+(d.modem?'val-green':'val-red');
+    // Thresholds
+    if(d.thresh){
+      setText('outTR',fmt(d.thresh.out?.tMin)+'–'+fmt(d.thresh.out?.tMax)+'°C');
+      setText('outHR',fmt(d.thresh.out?.hMin)+'–'+fmt(d.thresh.out?.hMax)+'%');
+      setText('in1TR',fmt(d.thresh.in1?.tMin)+'–'+fmt(d.thresh.in1?.tMax)+'°C');
+      setText('in1HR',fmt(d.thresh.in1?.hMin)+'–'+fmt(d.thresh.in1?.hMax)+'%');
+      setText('in2TR',fmt(d.thresh.in2?.tMin)+'–'+fmt(d.thresh.in2?.tMax)+'°C');
+      setText('in2HR',fmt(d.thresh.in2?.hMin)+'–'+fmt(d.thresh.in2?.hMax)+'%');
+      setIn('oTn',d.thresh.out?.tMin);setIn('oTx',d.thresh.out?.tMax);
+      setIn('oHn',d.thresh.out?.hMin);setIn('oHx',d.thresh.out?.hMax);
+      setIn('i1Tn',d.thresh.in1?.tMin);setIn('i1Tx',d.thresh.in1?.tMax);
+      setIn('i1Hn',d.thresh.in1?.hMin);setIn('i1Hx',d.thresh.in1?.hMax);
+      setIn('i2Tn',d.thresh.in2?.tMin);setIn('i2Tx',d.thresh.in2?.tMax);
+      setIn('i2Hn',d.thresh.in2?.hMin);setIn('i2Hx',d.thresh.in2?.hMax);
+    }
+    if(d.fanDelay!=null) setIn('inFD',d.fanDelay);
+    if(d.weatherGate!=null) setIn('inWG',d.weatherGate);
+    // Phone numbers
+    if(d.phones){
+      setIn('inPh1',d.phones[0]||'');
+      setIn('inPh2',d.phones[1]||'');
+      setIn('inPh3',d.phones[2]||'');
+    }
+    // Fan mode buttons
+    ['btnAuto','btnOn','btnOff'].forEach(b=>{document.getElementById(b).classList.remove('active-mode');document.getElementById(b).style.opacity='0.5'});
+    const ab=d.fan?.mode==='ON'?'btnOn':d.fan?.mode==='OFF'?'btnOff':'btnAuto';
+    document.getElementById(ab).style.opacity='1';document.getElementById(ab).classList.add('active-mode');
+    document.getElementById('lastUp').textContent=new Date().toLocaleTimeString();
+  }catch(e){console.error(e)}
+}
+
+function sendCmd(obj){
+  if(!client||!client.isConnected()){alert('Not connected');return}
+  const m=new Paho.Message(JSON.stringify(obj));
+  m.destinationName=cmdTopic;client.send(m);
+  // Visual feedback
+  const btns=event?.target;
+  if(btns&&btns.tagName==='BUTTON'){
+    const orig=btns.textContent;btns.textContent='✓ Sent!';
+    setTimeout(()=>btns.textContent=orig,1500);
+  }
+}
+
+function setVal(key,inputId,isInt){
+  const v=document.getElementById(inputId).value;
+  sendCmd({cmd:'set',key:key,val:isInt?parseInt(v):parseFloat(v)});
+}
+function setPair(id1,id2){
+  sendCmd({cmd:'set',key:id1.replace('i1','1').replace('i2','2'),val:parseFloat(document.getElementById(id1).value)});
+  sendCmd({cmd:'set',key:id2.replace('i1','1').replace('i2','2'),val:parseFloat(document.getElementById(id2).value)});
+}
+
+function showTab(tabId){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-bar button').forEach(b=>b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function fmt(v){return v!=null&&!isNaN(v)?Number(v).toFixed(1):'—'}
+function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v}
+function setIn(id,v){const e=document.getElementById(id);if(e&&v!=null)e.value=v}
+
+// Auto-load saved device ID
+window.onload=()=>{
+  const saved=localStorage.getItem('reef_mqtt_id');
+  if(saved){document.getElementById('deviceId').value=saved;connectMQTT()}
+};
+</script>
+</body>
+</html>
